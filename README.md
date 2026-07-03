@@ -1,208 +1,131 @@
-# EW-ShadowNavigator 🛰️
+# EW-ShadowNavigator
 
-**Інверсивна навігація БПЛА за сигналом завади та маскування рельєфом («Радіотінь»).**
+**Inversive UAV navigation via jammer-signal terrain masking.**
 
-Програма-симулятор, яка показує, як дрон може безпечно летіти в зоні, де
-заглушений GPS — не борючись із глушилкою, а **використовуючи її власне
-випромінювання як маяк** і ховаючись у «радіотіні» за рельєфом.
+Turns an electronic-warfare (EW) jamming source into a navigation beacon
+instead of a threat: the UAV localizes the jammer purely from its own
+emissions, then routes through terrain-masked "radio shadow" zones to
+avoid it — no GPS required.
 
+![Mission report](assets/mission_report.png)
+*Full pipeline on a synthetic demo terrain: ground-truth radio shadow (top
+right), localization confidence converging over the mission (bottom
+left), and the actually-flown adaptive route vs. a naive direct path
+(bottom right). See "Honest results" below for what these numbers mean.*
 
----
+## The core idea
 
-## 📖 Зміст
-1. [Ідея простими словами](#-ідея-простими-словами)
-2. [Як це працює: три кроки](#-як-це-працює-три-кроки)
-3. [Що робить кожен файл програми](#-що-робить-кожен-файл-програми)
-4. [Як користуватися застосунком](#-як-користуватися-застосунком)
-5. [Що означають цифри на екрані](#-що-означають-цифри-на-екрані)
+To jam GPS or radio, a station must broadcast a large amount of power —
+it "lights up" the RF spectrum like a searchlight. That is also its
+weakness: **the jammer cannot hide.**
 
+1. **Localize the threat.** The drone takes RSSI (signal strength)
+   readings as it moves. A grid-based Bayesian filter combines these
+   noisy readings with a log-distance path-loss model to converge on the
+   jammer's position — passively, with no GPS and no active radar.
+2. **Find the radio shadow.** Given that position estimate, a
+   line-of-sight analysis over a Digital Elevation Model (DEM) finds
+   every point hills and ridges shield from the jammer — radio waves are
+   blocked by terrain just like light is.
+3. **Route through it.** An A* planner threads a path from start to
+   goal that prefers those shadow cells, re-planning periodically as the
+   localization estimate sharpens — the route gets safer the more the
+   drone learns.
 
----
+This is a defensive, passive navigation technique: it does not target,
+track, or interfere with anything — it only helps a UAV find its own way
+home when GPS is denied. The same technique applies directly to civilian
+autonomous logistics in increasingly congested RF environments.
 
-## 💡 Ідея простими словами
-
-**Проблема.** На сучасній війні дрони найчастіше «вбиває» не зброя, а
-радіоелектронна боротьба (РЕБ) — станції-глушилки, які забивають сигнал
-GPS. Дрон «сліпне» і втрачає орієнтацію.
-
-**Парадокс, на якому все побудовано.** Щоб заглушити велику територію,
-глушилка мусить випромінювати **колосальну кількість енергії**. У
-радіодіапазоні вона «світиться» як потужний прожектор у темряві. Тобто
-глушилка не може сховатися — вона сама себе видає.
-
-**Рішення.** Замість того щоб боротися з цим сигналом, дрон його
-**використовує**:
-- по силі сигналу він розуміє, **де стоїть глушилка**;
-- по карті рельєфу він знаходить **«радіотіні»** — зони за пагорбами, куди
-  радіохвилі фізично не дістають (так само, як світло не проходить крізь
-  гору);
-- і будує маршрут, що **ховається в цих тінях**, використовуючи самі
-  пагорби як природний щит.
-
----
-
-## ⚙️ Як це працює: три кроки
-
-### Крок 1. Знайти глушилку, не бачачи її (локалізація)
-
-Дрон летить і в різних точках заміряє **потужність сигналу глушилки**
-(RSSI — Received Signal Strength Indicator). Правило просте: що ближче до
-глушилки — то сильніший сигнал.
-
-Але сигнал «брудний»: він відбивається від пагорбів, стрибає, шумить.
-Тому дрон не робить прямого висновку, а веде **карту ймовірностей**: «з
-такою ймовірністю глушилка тут, з такою — там». З кожним новим заміром ця
-карта уточнюється за формулою **Байєса**, і зона можливого розташування
-глушилки з кожною секундою звужується.
-
-> 🧠 Це називається **байєсівська локалізація на сітці** — той самий метод,
-> яким шукають джерела радіосигналу, тварин із радіомаячками чи визначають
-> положення в приміщенні за Wi-Fi.
-
-### Крок 2. Знайти «радіотіні» (аналіз лінії видимості)
-
-Коли дрон приблизно знає, де глушилка, програма бере **цифрову карту
-висот місцевості (DEM — Digital Elevation Model)** і для кожної точки
-рельєфу перевіряє: чи «бачить» її глушилка по прямій лінії?
-
-- Якщо між глушилкою і точкою немає перешкод → точка **відкрита** (сигнал
-  дістає, небезпечно).
-- Якщо на шляху прямої лінії височіє пагорб → точка в **радіотіні**
-  (сигнал заблоковано, безпечно).
-
-> 🧠 Це називається **аналіз лінії видимості (line-of-sight / viewshed)**.
-> Той самий принцип використовують, коли планують, де поставити вежу
-> мобільного зв'язку, щоб вона «покривала» місцевість.
-
-### Крок 3. Прокласти безпечний маршрут (пошук шляху)
-
-Тепер програма будує маршрут від старту до цілі. Але не найкоротший, а
-**найбезпечніший**: алгоритм навмисно веде дрон через зони радіотіні й
-уникає відкритих ділянок. Якщо треба — може ненадовго перетнути відкрите
-місце, але «платить» за це високою «ціною» і намагається цього уникати.
-
-### І головне — все це **адаптивно**
-
-Дрон не рахує маршрут один раз наперед. Він летить, робить заміри,
-уточнює, де глушилка, і **періодично перебудовує маршрут**. Що довше
-летить — то точніше знає обстановку й то безпечніше рухається. Це видно на
-графіку «впевненості»: спочатку дрон майже не знає, де загроза, а до
-середини місії — знає майже точно.
-
----
-
-## 📁 Що робить кожен файл програми
-
-Програма розбита на окремі модулі, кожен відповідає за одну річ (це
-називається «модульна архітектура» — так роблять у справжніх продуктах, бо
-кожну частину легко перевірити й замінити окремо).
+## Architecture
 
 ```
-ews-shadow-navigator/
-├── app.py              ← інтерактивний застосунок (те, що ти відкриваєш у браузері)
-├── demo.py             ← простий тест без браузера (робить картинку-звіт)
-├── requirements.txt    ← список бібліотек, які треба встановити
-├── README.md           ← цей файл
-└── src/                ← «мозок» програми (вся математика)
-    ├── terrain.py         ← створює рельєф (карту висот)
-    ├── rf_shadow.py       ← рахує радіотіні
-    ├── localization.py    ← знаходить глушилку за сигналом
-    ├── pathfinding.py     ← прокладає безпечний маршрут
-    └── mission.py         ← об'єднує все в одну «місію»
+src/
+  terrain.py        DEM source: synthetic (diamond-square fractal) or
+                     real GeoTIFF via rasterio
+  rf_shadow.py       Line-of-sight / radio-shadow analysis (vectorized)
+  localization.py    Bayesian grid filter for RSSI-based localization
+  pathfinding.py     Risk-weighted A* search
+  mission.py         Ties it together: the adaptive measure -> localize
+                     -> replan -> fly loop
+app.py               Interactive Streamlit + pydeck 3D front-end
+demo.py              Dependency-light CLI demo -> assets/mission_report.png
 ```
 
-### `src/terrain.py` — рельєф місцевості
-Створює **карту висот** — тривимірний ландшафт із пагорбами й долинами.
-Може працювати двома способами:
-- **синтетичний рельєф** — генерує реалістичні пагорби математично (метод
-  «diamond-square», що використовується в іграх для створення ландшафтів).
-  Це варіант за замовчуванням — працює миттєво, без інтернету;
-- **реальний рельєф** — може завантажити справжню карту висот (файл
-  `.tif`, наприклад рельєф Києва чи Карпат), якщо юзер її скачає.
+Each module in `src/` only depends on numpy/scipy and has no UI code, so
+the same logic drives both the CLI demo and the interactive app.
 
-### `src/rf_shadow.py` — радіотіні
-Бере рельєф і позицію глушилки й для кожної точки рахує: у тіні вона чи на
-видноті. Малює «карту тіней» — саме її ти бачиш зеленим/червоним у
-застосунку.
+## Quickstart
 
-### `src/localization.py` — пошук глушилки
-Реалізує ту саму **байєсівську карту ймовірностей** із Кроку 1. Отримує
-заміри сигналу від дрона й уточнює, де найімовірніше стоїть глушилка. Тут
-же — **фізична модель поширення сигналу** (наскільки він слабшає з
-відстанню й наскільки додатково глушиться, коли шлях перекритий пагорбом).
+```bash
+python -m venv .venv && source .venv/bin/activate   # optional but recommended
+pip install -r requirements.txt
 
-### `src/pathfinding.py` — прокладання маршруту
-Реалізує алгоритм **A\*** із Кроку 3. Перетворює карту тіней на карту
-«вартості проходу» (тінь дешева, відкрита зона дорога) і знаходить
-найдешевший = найбезпечніший шлях.
+# Fast, dependency-light sanity check (numpy/scipy/matplotlib only):
+python demo.py            # -> assets/mission_report.png
 
-### `src/mission.py` — диспетчер місії
-«Головний» модуль, що з'єднує все докупи в цикл: *замір → уточнити позицію
-глушилки → перебудувати маршрут → пролетіти відрізок → повторити*. На
-виході дає готову траєкторію польоту й усі метрики.
+# Full interactive 3D app:
+streamlit run app.py
+```
 
-### `app.py` — застосунок у браузері
-Малює 3D-карту (бібліотека `pydeck`), панель керування зліва й показує
-результати. Сам нічого не рахує — лише викликає «мозок» із папки `src/` і
-красиво показує результат. **Уся математика перевіряється окремо від
-інтерфейсу** — це і є ознака якісної архітектури.
+## Deploying for free (Streamlit Community Cloud)
 
-### `demo.py` — швидка перевірка
-Запускає весь ланцюжок без браузера й зберігає картинку-звіт
-(`assets/mission_report.png`). Корисно, щоб швидко переконатися, що все
-працює.
+1. Push this repo to GitHub (public).
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app** →
+   select the repo and `app.py`.
+3. You get a public URL — anyone can open it in a browser and interact
+   with the simulation with no local install.
 
----
+## Using a real DEM instead of synthetic terrain
 
+`src/terrain.py` also exposes `load_real_dem(path)`, which reads any
+GeoTIFF elevation file via `rasterio` (e.g. an SRTM tile from
+[OpenTopography](https://opentopography.org) or USGS EarthExplorer). The
+Streamlit app's sidebar already has an "Upload real GeoTIFF" option wired
+up to it — the rest of the pipeline is agnostic to where the elevation
+grid came from. Uncomment `rasterio` in `requirements.txt` to enable it.
 
-## 🕹️ Як користуватися застосунком
+## Honest results (and current scope)
 
-Зліва — **панель керування**:
+Numbers from the bundled demo scenario (synthetic terrain, 2.5×2.5 km,
+122 m relief) — reproduced by `python demo.py`:
 
-**1. Рельєф (Terrain)**
-- *Grid size* — розмір карти (більше = детальніше, але повільніше).
-- *Random seed* — «номер» рельєфу. Зміни число — отримаєш інший ландшафт.
-- *Roughness* — «пересіченість» (вище = гористіше).
-- *Relief (m)* — перепад висот у метрах.
-- *Cell size (m)* — скільки метрів у одній клітинці.
-- *Vertical exaggeration* — **тільки візуальне** розтягнення по висоті, щоб
-  краще бачити рельєф. На розрахунки не впливає.
+| Metric | Value |
+|---|---|
+| Ground-truth radio shadow coverage | 13.9% of the map |
+| Final localization error | 0 m (this seed) — typically converges to 1-2 grid cells |
+| Final localization confidence | 55% |
+| Exposure, naive direct path | 89.0% |
+| Exposure, adaptive route (realistic, learns while flying) | 70.4% |
+| Exposure, route if jammer position were known from the start | 49.3% |
 
-**2. Сценарій (Scenario)**
-- *Jammer row / col* — де стоїть глушилка.
-- *Jammer / Drone height* — висота антени глушилки і висота польоту дрона.
-- *Start / Goal row / col* — звідки й куди летить дрон.
+The gap between the "realistic" and "if known from the start" rows is
+expected and, we think, an honest and interesting result: early in a
+mission the drone hasn't yet localized the threat, so it can't route
+around it optimally yet — it improves its route as its confidence grows.
+That explore-then-exploit curve is visible directly in the bottom-left
+panel of the mission report above.
 
-**3. Параметри місії (Mission parameters)**
-- *Replan interval* — як часто дрон перебудовує маршрут.
-- *Exposure penalty* — наскільки сильно дрон уникає відкритих зон (вище =
-  обережніше).
-- *Mission RNG seed* — «номер» випадковості для замірів.
+**What's simplified for this stage, on purpose:**
+- The planner uses periodic A* replanning rather than incremental
+  D\* Lite. Same adaptive behavior, far less implementation risk in the
+  available time; `mission.py` isolates this so swapping in D\* Lite
+  later only touches one function.
+- Terrain defaults to procedurally generated synthetic DEMs so the
+  project is instantly runnable and reproducible with no downloads;
+  real-DEM support is implemented and wired into the UI, ready for a
+  real SRTM tile.
+- ONNX export for on-board (Jetson/RPi-class) deployment is a planned
+  next step, not yet implemented.
 
-Натисни **синю кнопку «Run mission»** — і в центрі з'явиться результат.
+## Roadmap
 
-**Нотатка:** якщо перемкнути «Terrain color» на **«Radio shadow»** —
-рельєф забарвиться зеленим (тінь) і червоним (відкрито), і буде чудово
-видно, як синя лінія маршруту тримається зелених зон. Карту можна крутити
-мишкою.
+- [ ] Swap periodic A* for incremental D\* Lite replanning
+- [ ] Export the decision core via ONNX Runtime for on-board deployment
+- [ ] Validate against a real DEM tile (Kyiv region / Carpathians)
+- [ ] Package the core as a small FastAPI service for integration with
+      Mission Planner / QGroundControl
 
----
+## License
 
-## 📊 Що означають цифри на екрані
-
-- **Reached goal** — чи дрон долетів до цілі (Yes/No).
-- **Localization error** — на скільки метрів дрон помилився у визначенні
-  позиції глушилки. Менше = краще. (0 м = вгадав точно.)
-- **Localization confidence** — наскільки дрон *упевнений* у своїй оцінці
-  (0–100%). Вище = краще.
-- **Path exposure** — який відсоток маршруту пройшов по **відкритих** (не в
-  тіні) зонах. Менше = безпечніше.
-- **Графік «Localization confidence over the mission»** — як зростала
-  впевненість дрона під час польоту. Крива, що йде вгору = дрон
-  «розбирається» в обстановці на льоту.
-
----
-
-
-*Проєкт створено як розвиток ідеї автономної навігації в GPS-заглушеному
-середовищі*
+MIT — see `LICENSE`.

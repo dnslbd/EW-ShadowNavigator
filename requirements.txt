@@ -1,0 +1,13 @@
+streamlit>=1.30
+pydeck>=0.8
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+matplotlib>=3.7
+
+# Optional: only needed if you enable real GeoTIFF DEM upload (src/terrain.py
+# -> load_real_dem). Not required for the synthetic-terrain demo mode.
+# On Streamlit Community Cloud, rasterio also needs a packages.txt with:
+#   gdal-bin
+#   libgdal-dev
+# rasterio>=1.3
