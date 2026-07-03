@@ -24,10 +24,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from src.terrain import generate_synthetic_dem
-from src.rf_shadow import compute_los_grid
-from src.pathfinding import astar, build_risk_grid, path_exposure_fraction
-from src.mission import run_adaptive_mission
+from terrain import generate_synthetic_dem
+from rf_shadow import compute_los_grid
+from pathfinding import astar, build_risk_grid, path_exposure_fraction
+from mission import run_adaptive_mission
 
 
 # ----------------------------------------------------------------------
