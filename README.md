@@ -1,7 +1,7 @@
 # EW-ShadowNavigator 🛰️
 
 **Інверсивна навігація БПЛА за сигналом завади та маскування рельєфом («Радіотінь»).**
-🔗 **Живе демо:** [ https://твоє-посилання.streamlit.app](https://ew-shadownavigator-k3fggzded5nq2j4hiekq7f.streamlit.app/)
+🔗 **Живе демо:** https://ew-shadownavigator-k3fggzded5nq2j4hiekq7f.streamlit.app/
 
 Програма-симулятор, яка показує, як дрон може безпечно летіти в зоні, де
 заглушений GPS — не борючись із глушилкою, а **використовуючи її власне
