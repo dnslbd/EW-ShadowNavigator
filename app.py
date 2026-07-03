@@ -30,9 +30,9 @@ import pandas as pd
 import streamlit as st
 import pydeck as pdk
 
-from src.terrain import generate_synthetic_dem, load_real_dem
-from src.rf_shadow import compute_los_grid
-from src.mission import run_adaptive_mission
+from terrain import generate_synthetic_dem, load_real_dem
+from rf_shadow import compute_los_grid
+from mission import run_adaptive_mission
 
 
 st.set_page_config(page_title="EW-ShadowNavigator", layout="wide")
