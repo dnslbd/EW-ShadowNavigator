@@ -31,7 +31,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass, field
 
-from .rf_shadow import compute_los_grid
+from rf_shadow import compute_los_grid
 
 
 @dataclass
