@@ -1,0 +1,1 @@
+"""EW-ShadowNavigator core package."""
